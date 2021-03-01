@@ -8,3 +8,5 @@ edition = "2018"
 
 [dependencies]
 rpassword = "5.0"
+terminal-menu = "1.9.7"
+json = "0.12.4"

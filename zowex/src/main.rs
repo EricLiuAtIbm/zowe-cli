@@ -9,7 +9,9 @@
 *
 */
 extern crate rpassword;
+extern crate json;
 use rpassword::read_password;
+use terminal_menu::*;
 
 use std::collections::HashMap;
 use std::env;
@@ -26,8 +28,9 @@ const X_ZOWE_DAEMON_EXIT: &str = "x-zowe-daemon-exit";
 const X_ZOWE_DAEMON_END: &str = "x-zowe-daemon-end";
 const X_ZOWE_DAEMON_PROGRESS: &str = "x-zowe-daemon-progress";
 const X_ZOWE_DAEMON_PROMPT: &str = "x-zowe-daemon-prompt";
+const X_ZOWE_DAEMON_INTERACTIVE: &str = "x-zowe-daemon-interactive";
 const X_ZOWE_DAEMON_VERSION: &str = "x-zowe-daemon-version";
-const X_HEADERS_VERSION_ONE_LENGTH: usize = 8;
+const X_HEADERS_VERSION_ONE_LENGTH: usize = 9;
 const DEFAULT_PORT: i32 = 4000;
 
 const X_ZOWE_DAEMON_REPLY: &str = "x-zowe-daemon-reply:";
@@ -57,6 +60,51 @@ fn main() -> std::io::Result<()> {
 
     Ok(())
 }
+
+// fn main() {
+
+//   //it might be a good idea to perform terminal-menu stuff
+//   //in separate functions from other code
+//   //so that you can use the following line without much confusion:
+//   use terminal_menu::*;
+
+//   //create the menu
+//   let menu = menu(vec![
+
+//       //run the example and try these out
+//       label("(use arrow keys or wasd)"),
+//       scroll("Selection", vec!["First Option", "Second Option", "Third Option"]),
+//       list("Do Something", vec!["Yes", "No"]),
+//       numeric("Numeric", 2.75, Some(0.25), Some(-7.25), Some(11.5)),
+//       submenu("Submenu", {
+//           let mut submenu_items = vec![];
+//           submenu_items.push(label("Long menu"));
+//           for i in 0..25 {
+//               submenu_items.push(scroll(format!("Item{}", i), vec!["A", "B", "C"]));
+//           }
+//           submenu_items.push(back_button("Back"));
+//           submenu_items.push(button("Exit"));
+//           submenu_items
+//       }),
+//       button("Exit")
+//   ]);
+
+//   //open the menu
+//   activate(&menu);
+
+//   //other work can be done here
+
+//   //wait for the menu to exit
+//   wait_for_exit(&menu);
+
+//   //read values
+//   println!("Selection:     {}", selection_value(&menu, "Selection"));
+//   println!("Do Something:  {}", selection_value(&menu, "Do Something"));
+//   println!("Numeric:       {}", numeric_value(&menu, "Numeric"));
+
+//   let submenu = get_submenu(&menu, "Submenu");
+//   println!("Submenu.Item0: {}", selection_value(&submenu, "Item0"));
+// }
 
 fn run_zowe_command(mut args: String, port_string: &str) -> std::io::Result<()> {
     args.push_str(" --dcd ");
@@ -130,11 +178,12 @@ fn run_zowe_command(mut args: String, port_string: &str) -> std::io::Result<()> 
                 // else, we received headers and may need to print extraneous data on the same line
                 } else {
                     if pieces.len() > 1 {
-                        print!("{}", pieces[1]);
-                        io::stdout().flush().unwrap();
                         let &prompt = headers.get(X_ZOWE_DAEMON_PROMPT).unwrap();
 
                         if prompt > 0i32 {
+                            print!("{}", pieces[1]);
+                            io::stdout().flush().unwrap();
+
                             // prompt
                             let mut reply = String::new();
 
@@ -157,6 +206,36 @@ fn run_zowe_command(mut args: String, port_string: &str) -> std::io::Result<()> 
                             stream_clone.write(full_reply.as_bytes()).unwrap();
 
                             // else, just write this line
+                        }
+
+                        let &interactive = headers.get(X_ZOWE_DAEMON_INTERACTIVE).unwrap();
+                        if interactive > 0i32 {
+                            // parse the json object received
+                            let parsed = json::parse(&pieces[1]).unwrap();
+
+                            // create the menu
+                            let mut items = vec![];
+                            items.push(label(parsed["header"].as_str().as_deref().unwrap()));
+                            for i in parsed["menu"].members() {
+                                items.push(button(i.as_str().as_deref().unwrap()));
+                            }
+                            let menu = menu(items);
+
+                            // activate and wait for a response
+                            activate(&menu);
+                            wait_for_exit(&menu);
+                            let selected_entry = selected_item_index(&menu);
+                            deactivate(&menu);
+
+                            // append response to header
+                            let mut full_reply = X_ZOWE_DAEMON_REPLY.to_owned();
+                            full_reply.push_str(&selected_entry.to_string());
+
+                            // adjust our state that prompting has been resolved
+                            headers.insert(X_ZOWE_DAEMON_INTERACTIVE.to_string(), 0i32);
+
+                            // write response
+                            stream_clone.write(full_reply.as_bytes()).unwrap();
                         }
                     }
                 }
@@ -203,6 +282,7 @@ fn parse_headers(buf: &String) -> HashMap<String, i32> {
         }
     }
 
+
     // we have a version header
     if headers.contains_key(X_ZOWE_DAEMON_VERSION) {
         let &version = headers.get(X_ZOWE_DAEMON_VERSION).unwrap();
@@ -237,6 +317,7 @@ fn get_beg(buf: &str) -> Vec<String> {
 
     // if this line is long enough to contain headers
     if ss.len() >= 2 {
+        // TODO(???) - Is it safe to assume `x-` is for daemon headers only? What if the data contains `x-`?
         // if this line begins with header info, just return and parse it.  there is no extraneous data at the beginning
         if ss[0] == 'x' && ss[1] == '-' {
             parts.push(buf.to_owned());
