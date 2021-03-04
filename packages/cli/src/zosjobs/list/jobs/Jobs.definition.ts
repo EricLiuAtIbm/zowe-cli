@@ -39,6 +39,12 @@ export const JobsDefinition: ICommandDefinition = {
                 "You can specify a wildcard according to the z/OSMF Jobs REST endpoint documentation, " +
                 "which is usually in the form \"JOB*\".",
             type: "string"
+        },
+        {
+            name: "interactive", aliases: ["it"],
+            description: "Select a job to view the spool files",
+            type: "boolean",
+            defaultValue: false
         }
     ] as ICommandOptionDefinition[]),
     profile: {

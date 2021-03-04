@@ -9,7 +9,7 @@
 *
 */
 
-import { IHandlerParameters } from "@zowe/imperative";
+import { IHandlerParameters, ICommandOutputFormat } from "@zowe/imperative";
 import { IJob, GetJobs, JobsConstants } from "@zowe/zos-jobs-for-zowe-sdk";
 import { ZosmfBaseHandler } from "@zowe/zosmf-for-zowe-sdk";
 
@@ -34,15 +34,27 @@ export default class JobsHandler extends ZosmfBaseHandler {
         const prefix: string = (params.arguments.prefix != null) ? params.arguments.prefix : JobsConstants.DEFAULT_PREFIX;
         const jobs: IJob[] = await GetJobs.getJobsCommon(this.mSession, {owner, prefix});
 
-        // Populate the response object
-        params.response.data.setObj(jobs);
-        params.response.data.setMessage(`List of jobs returned for prefix "${prefix}" and owner "${owner}"`);
-
-        // Format the output with the default fields
-        params.response.format.output({
+        const format: ICommandOutputFormat = {
             fields: ["jobid", "retcode", "jobname", "status"],
             output: jobs,
             format: "table"
-        });
+        };
+
+        if (params.arguments.interactive) {
+            // let temp: any = params.response.format.output(format, true);
+            // console.log("temp: ", temp);
+            let temp: string = params.response.format.formatOutput({...format, ...{header: true}}, null, true);
+            const lines = temp.split("\n");
+            const header = " " + lines[0];
+            lines.shift();
+            params.response.console.interactiveSelection(lines, {header});
+        } else {
+            // Populate the response object
+            params.response.data.setObj(jobs);
+            params.response.data.setMessage(`List of jobs returned for prefix "${prefix}" and owner "${owner}"`);
+
+            // Format the output with the default fields
+            params.response.format.output(format);
+        }
     }
 }
