@@ -40,7 +40,7 @@ export default class JobsHandler extends ZosmfBaseHandler {
             format: "table"
         };
 
-        if (params.arguments.interactive) {
+        if (params.arguments.interactive && jobs.length > 0) {
             // let temp: any = params.response.format.output(format, true);
             // console.log("temp: ", temp);
             let temp: string = params.response.format.formatOutput({...format, ...{header: true}}, null, true);
